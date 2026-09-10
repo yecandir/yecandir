@@ -1,8 +1,12 @@
 name: refresh-stats
 
-# Regenerates the four SVGs under assets/ every night and commits them if they changed.
-# Committed SVGs render even when the public stat services are rate-limited, and unlike
-# a one-off export they never go stale.
+# Nightly: render the stats card ourselves (lowlighter/metrics, runs inside this workflow,
+# no third-party web service to rate-limit us) and refresh the streak card, then commit.
+# Public stat services (github-readme-stats.vercel.app) returned 503/402 on first try —
+# that is why the card is generated here and not hot-linked from the README.
+#
+# Private contributions: add a classic PAT with `repo` scope as secret METRICS_TOKEN.
+# Without it the default token sees public activity only.
 
 on:
   schedule:
@@ -13,27 +17,45 @@ permissions:
   contents: write
 
 jobs:
-  refresh:
+  metrics:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: fetch cards
-        env:
-          U: yecandir
-          THEME: github_dark
-        run: |
-          set -euo pipefail
-          mkdir -p assets
-          fetch() { curl -fsSL --retry 3 --retry-delay 5 "$2" -o "assets/$1.tmp" && mv "assets/$1.tmp" "assets/$1"; }
-          fetch stats.svg  "https://github-readme-stats.vercel.app/api?username=$U&show_icons=true&hide_border=true&theme=$THEME&include_all_commits=true&count_private=true"
-          fetch langs.svg  "https://github-readme-stats.vercel.app/api/top-langs/?username=$U&layout=compact&hide_border=true&theme=$THEME&langs_count=8&hide=html,css,scss"
-          fetch streak.svg "https://streak-stats.demolab.com/?user=$U&hide_border=true&theme=$THEME"
-          fetch graph.svg  "https://github-readme-activity-graph.vercel.app/graph?username=$U&hide_border=true&theme=$THEME&area=true"
+      - name: render metrics card
+        uses: lowlighter/metrics@latest
+        with:
+          token: ${{ secrets.METRICS_TOKEN || secrets.GITHUB_TOKEN }}
+          user: yecandir
+          filename: assets/metrics.svg
+          output_action: commit
+          committer_branch: main
+          committer_message: "stats: refresh metrics"
+          template: classic
+          base: header, activity, community, repositories
+          config_timezone: Europe/Istanbul
+          config_display: large
+          plugin_languages: yes
+          plugin_languages_limit: 8
+          plugin_languages_sections: most-used
+          plugin_languages_ignored: html, css, scss, shell
+          plugin_isocalendar: yes
+          plugin_isocalendar_duration: half-year
 
-      - name: commit if changed
+      - name: refresh streak card (best effort)
         run: |
+          set -uo pipefail
+          git pull -q --rebase origin main
+          mkdir -p assets
+          for url in \
+            "https://streak-stats.demolab.com/?user=yecandir&hide_border=true&theme=github_dark" \
+            "https://github-readme-streak-stats.herokuapp.com/?user=yecandir&hide_border=true&theme=github_dark"; do
+            if curl -fsSL --retry 2 --retry-delay 5 --max-time 30 "$url" -o assets/streak.tmp; then
+              mv assets/streak.tmp assets/streak.svg; break
+            fi
+          done
+          rm -f assets/streak.tmp
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add assets/
-          git diff --cached --quiet && echo "no change" || git commit -m "stats: refresh $(date -u +%F)" && git push
+          git diff --cached --quiet && echo "streak unchanged" || { git commit -m "stats: refresh streak" && git push; }

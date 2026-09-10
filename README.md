@@ -42,8 +42,7 @@
 <br/>
 
 <div align="center">
-  <img src="assets/stats.svg" height="180" alt="GitHub stats" />
-  <img src="assets/langs.svg" height="180" alt="Most used languages" />
+  <img src="assets/metrics.svg" alt="GitHub metrics: activity, languages, contribution calendar" />
 </div>
 
 <br/>
@@ -52,10 +51,4 @@
   <img src="assets/streak.svg" width="820" alt="Contribution streak" />
 </div>
 
-<br/>
-
-<div align="center">
-  <img src="assets/graph.svg" width="820" alt="Contribution graph" />
-</div>
-
-<p align="center"><sub>Stats regenerate every night via <a href=".github/workflows/refresh-stats.yml">a workflow</a>, so they never go stale.</sub></p>
+<p align="center"><sub>Cards are rendered every night by <a href=".github/workflows/refresh-stats.yml">a workflow in this repo</a> — no hot-linked stat service, nothing to go stale or rate-limit.</sub></p>
