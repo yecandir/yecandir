@@ -1,0 +1,39 @@
+name: refresh-stats
+
+# Regenerates the four SVGs under assets/ every night and commits them if they changed.
+# Committed SVGs render even when the public stat services are rate-limited, and unlike
+# a one-off export they never go stale.
+
+on:
+  schedule:
+    - cron: "17 3 * * *"   # 06:17 Europe/Istanbul
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: fetch cards
+        env:
+          U: yecandir
+          THEME: github_dark
+        run: |
+          set -euo pipefail
+          mkdir -p assets
+          fetch() { curl -fsSL --retry 3 --retry-delay 5 "$2" -o "assets/$1.tmp" && mv "assets/$1.tmp" "assets/$1"; }
+          fetch stats.svg  "https://github-readme-stats.vercel.app/api?username=$U&show_icons=true&hide_border=true&theme=$THEME&include_all_commits=true&count_private=true"
+          fetch langs.svg  "https://github-readme-stats.vercel.app/api/top-langs/?username=$U&layout=compact&hide_border=true&theme=$THEME&langs_count=8&hide=html,css,scss"
+          fetch streak.svg "https://streak-stats.demolab.com/?user=$U&hide_border=true&theme=$THEME"
+          fetch graph.svg  "https://github-readme-activity-graph.vercel.app/graph?username=$U&hide_border=true&theme=$THEME&area=true"
+
+      - name: commit if changed
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add assets/
+          git diff --cached --quiet && echo "no change" || git commit -m "stats: refresh $(date -u +%F)" && git push
