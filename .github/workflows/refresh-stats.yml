@@ -1,86 +1,34 @@
 name: refresh-stats
 
-# Nightly: render the stats card ourselves (lowlighter/metrics, runs inside this workflow,
-# no third-party web service to rate-limit us) and refresh the streak card, then commit.
-# Public stat services (github-readme-stats.vercel.app) returned 503/402 on first try —
-# that is why the card is generated here and not hot-linked from the README.
-#
-# Private contributions: add a classic PAT with `repo` scope as secret METRICS_TOKEN.
-# Without it the default token sees public activity only.
+# Nightly: rebuild assets/card-{dark,light}.svg from the GitHub GraphQL API and commit.
+# METRICS_TOKEN = classic PAT with `repo` + `read:user`, so private contributions
+# and private-repo languages are counted.
 
 on:
   schedule:
     - cron: "17 3 * * *"   # 06:17 Europe/Istanbul
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [scripts/render_card.py, .github/workflows/refresh-stats.yml]
 
 permissions:
   contents: write
 
 jobs:
-  metrics:
+  card:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: which token do we have
-        run: echo "HAS_PAT=${{ secrets.METRICS_TOKEN != '' }}" >> "$GITHUB_ENV"
+      - name: render card
+        env:
+          GH_TOKEN: ${{ secrets.METRICS_TOKEN }}
+        run: python3 scripts/render_card.py
 
-      # Full card: needs METRICS_TOKEN (classic PAT, `repo` + `read:user`) so languages,
-      # repositories and private contributions are visible.
-      - name: render metrics card (full)
-        if: env.HAS_PAT == 'true'
-        uses: lowlighter/metrics@latest
-        with:
-          token: ${{ secrets.METRICS_TOKEN }}
-          user: yecandir
-          filename: assets/metrics.svg
-          output_action: commit
-          committer_branch: main
-          committer_message: "stats: refresh metrics"
-          template: classic
-          base: header, activity, community, repositories
-          config_timezone: Europe/Istanbul
-          config_display: large
-          plugin_languages: yes
-          plugin_languages_limit: 8
-          plugin_languages_sections: most-used
-          plugin_languages_ignored: html, css, scss, shell
-          plugin_isocalendar: yes
-          plugin_isocalendar_duration: half-year
-
-      # Lean card: the default token only sees this repo, so anything repo-scoped would
-      # render as zeros. Activity and the contribution calendar are public and correct.
-      - name: render metrics card (lean, no PAT yet)
-        if: env.HAS_PAT != 'true'
-        uses: lowlighter/metrics@latest
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          user: yecandir
-          filename: assets/metrics.svg
-          output_action: commit
-          committer_branch: main
-          committer_message: "stats: refresh metrics"
-          template: classic
-          base: header, activity
-          config_timezone: Europe/Istanbul
-          config_display: large
-          plugin_isocalendar: yes
-          plugin_isocalendar_duration: half-year
-
-      - name: refresh streak card (best effort)
+      - name: commit if changed
         run: |
-          set -uo pipefail
-          git pull -q --rebase origin main
-          mkdir -p assets
-          for url in \
-            "https://streak-stats.demolab.com/?user=yecandir&hide_border=true&theme=github_dark" \
-            "https://github-readme-streak-stats.herokuapp.com/?user=yecandir&hide_border=true&theme=github_dark"; do
-            if curl -fsSL --retry 2 --retry-delay 5 --max-time 30 "$url" -o assets/streak.tmp; then
-              mv assets/streak.tmp assets/streak.svg; break
-            fi
-          done
-          rm -f assets/streak.tmp
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add assets/
-          git diff --cached --quiet && echo "streak unchanged" || { git commit -m "stats: refresh streak" && git push; }
+          git diff --cached --quiet && echo "card unchanged" || { git commit -m "stats: refresh card" && git push; }
